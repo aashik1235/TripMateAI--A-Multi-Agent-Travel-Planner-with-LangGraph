@@ -1,565 +1,278 @@
 import os
+import re
 import requests
 import certifi
-import re
 import airportsdata
 import pycountry
+
+from datetime import date
 from dotenv import load_dotenv
 
 load_dotenv()
 
-os.environ["SSL_CERT_FILE"] = certifi.where()
-os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
-
 API_KEY = os.getenv("AVIATIONSTACK_API_KEY")
-
-# Default origin: Kathmandu, Nepal
-DEFAULT_ORIGIN_IATA = os.getenv("DEFAULT_ORIGIN_IATA", "KTM")
-
-BASE_URL = "https://api.aviationstack.com/v1/flights"
-
+BASE_URL = "https://api.aviationstack.com/v1/flightsFuture"
+DEFAULT_ORIGIN = "KTM"
 AIRPORTS_DATA = airportsdata.load("IATA")
 
-
-# --------------------------------------------------
-# COUNTRY ALIASES
-# --------------------------------------------------
-
 COUNTRY_ALIAS = {
-    "USA": "US",
-    "UNITED STATES": "US",
-    "UK": "GB",
-    "UNITED KINGDOM": "GB",
-    "UAE": "AE",
-    "UNITED ARAB EMIRATES": "AE",
-    "NEPAL": "NP",
-    "INDIA": "IN",
-    "CANADA": "CA",
-    "AUSTRALIA": "AU",
-    "NEW ZEALAND": "NZ",
-    "GERMANY": "DE",
-    "FRANCE": "FR",
-    "ITALY": "IT",
-    "SPAIN": "ES",
-    "PORTUGAL": "PT",
-    "JAPAN": "JP",
-    "CHINA": "CN",
-    "SOUTH KOREA": "KR",
-    "NORTH KOREA": "KP",
-    "SINGAPORE": "SG",
-    "MALAYSIA": "MY",
-    "THAILAND": "TH",
-    "INDONESIA": "ID",
-    "PHILIPPINES": "PH",
-    "VIETNAM": "VN",
-    "BANGLADESH": "BD",
-    "PAKISTAN": "PK",
-    "SRI LANKA": "LK",
-    "BHUTAN": "BT",
-    "MALDIVES": "MV",
-    "SAUDI ARABIA": "SA",
-    "QATAR": "QA",
-    "KUWAIT": "KW",
-    "OMAN": "OM",
-    "BAHRAIN": "BH",
-    "TURKEY": "TR",
-    "RUSSIA": "RU",
-    "UKRAINE": "UA",
-    "BRAZIL": "BR",
-    "ARGENTINA": "AR",
+    "NEPAL": "NP", "INDONESIA": "ID", "INDIA": "IN",
+    "USA": "US", "UNITED STATES": "US", "UK": "GB",
+    "UNITED KINGDOM": "GB", "UAE": "AE",
+    "UNITED ARAB EMIRATES": "AE", "AUSTRALIA": "AU",
+    "CANADA": "CA", "JAPAN": "JP", "CHINA": "CN",
+    "SINGAPORE": "SG", "MALAYSIA": "MY", "THAILAND": "TH",
+    "GERMANY": "DE", "FRANCE": "FR", "ITALY": "IT",
+    "SPAIN": "ES", "SOUTH KOREA": "KR", "SOUTH AFRICA": "ZA",
+    "BANGLADESH": "BD", "PAKISTAN": "PK", "SRI LANKA": "LK",
+    "BHUTAN": "BT", "QATAR": "QA", "SAUDI ARABIA": "SA",
+    "TURKEY": "TR", "TÜRKIYE": "TR", "NEW ZEALAND": "NZ",
+    "PHILIPPINES": "PH", "VIETNAM": "VN", "NETHERLANDS": "NL",
+    "SWITZERLAND": "CH", "PORTUGAL": "PT", "BRAZIL": "BR",
     "MEXICO": "MX",
-    "SOUTH AFRICA": "ZA",
-    "EGYPT": "EG",
-    "NIGERIA": "NG",
-    "KENYA": "KE",
-    "SWITZERLAND": "CH",
-    "NETHERLANDS": "NL",
-    "BELGIUM": "BE",
-    "SWEDEN": "SE",
-    "NORWAY": "NO",
-    "DENMARK": "DK",
-    "FINLAND": "FI",
-    "IRELAND": "IE",
-    "POLAND": "PL",
-    "GREECE": "GR",
-    "ISRAEL": "IL",
-    "IRAN": "IR",
-    "IRAQ": "IQ"
 }
-
-
-# --------------------------------------------------
-# CITY TO AIRPORT MAPPING
-# --------------------------------------------------
 
 CITY_MAIN_AIRPORTS = {
-
-    # Nepal
-    "KATHMANDU": "KTM",
-    "POKHARA": "PKR",
-    "BHAIRAHAWA": "BWA",
-    "BIRATNAGAR": "BIR",
-    "NEPALGUNJ": "KEP",
-    "BHARATPUR": "BHR",
-    "JANAKPUR": "JKR",
-
-    # India
-    "DELHI": "DEL",
-    "MUMBAI": "BOM",
-    "BANGALORE": "BLR",
-    "BENGALURU": "BLR",
-    "CHENNAI": "MAA",
-    "KOLKATA": "CCU",
-    "HYDERABAD": "HYD",
-    "PUNE": "PNQ",
-    "JAIPUR": "JAI",
-    "AHMEDABAD": "AMD",
-    "GOA": "GOI",
-
-    # USA
-    "NEW YORK": "JFK",
-    "LOS ANGELES": "LAX",
-    "CHICAGO": "ORD",
-    "SAN FRANCISCO": "SFO",
-    "MIAMI": "MIA",
-    "BOSTON": "BOS",
-    "WASHINGTON DC": "IAD",
-    "LAS VEGAS": "LAS",
-    "SEATTLE": "SEA",
-    "DALLAS": "DFW",
-    "HOUSTON": "IAH",
-    "ORLANDO": "MCO",
-
-    # UK
-    "LONDON": "LHR",
-    "MANCHESTER": "MAN",
-    "BIRMINGHAM": "BHX",
-    "EDINBURGH": "EDI",
-    "GLASGOW": "GLA",
-
-    # UAE
-    "DUBAI": "DXB",
-    "ABU DHABI": "AUH",
-    "SHARJAH": "SHJ",
-
-    # Europe
-    "PARIS": "CDG",
-    "FRANKFURT": "FRA",
-    "BERLIN": "BER",
-    "MUNICH": "MUC",
-    "ROME": "FCO",
-    "MILAN": "MXP",
-    "MADRID": "MAD",
-    "BARCELONA": "BCN",
-    "AMSTERDAM": "AMS",
+    "KATHMANDU": "KTM", "POKHARA": "PKR", "BIRATNAGAR": "BIR",
+    "JAKARTA": "CGK", "BALI": "DPS", "DENPASAR": "DPS",
+    "SURABAYA": "SUB", "DELHI": "DEL", "NEW DELHI": "DEL",
+    "MUMBAI": "BOM", "BANGALORE": "BLR", "BENGALURU": "BLR",
+    "CHENNAI": "MAA", "KOLKATA": "CCU", "DHAKA": "DAC",
+    "NEW YORK": "JFK", "LOS ANGELES": "LAX",
+    "SAN FRANCISCO": "SFO", "CHICAGO": "ORD",
+    "LONDON": "LHR", "DUBAI": "DXB", "ABU DHABI": "AUH",
+    "SINGAPORE": "SIN", "KUALA LUMPUR": "KUL", "BANGKOK": "BKK",
+    "TOKYO": "HND", "OSAKA": "KIX", "SYDNEY": "SYD",
+    "MELBOURNE": "MEL", "TORONTO": "YYZ", "VANCOUVER": "YVR",
+    "PARIS": "CDG", "BERLIN": "BER", "FRANKFURT": "FRA",
+    "ROME": "FCO", "MADRID": "MAD", "AMSTERDAM": "AMS",
     "ZURICH": "ZRH",
-    "GENEVA": "GVA",
-    "VIENNA": "VIE",
-    "ATHENS": "ATH",
-    "ISTANBUL": "IST",
-    "LISBON": "LIS",
+}
 
-    # Asia
-    "TOKYO": "HND",
-    "OSAKA": "KIX",
-    "BEIJING": "PEK",
-    "SHANGHAI": "PVG",
-    "HONG KONG": "HKG",
-    "SINGAPORE": "SIN",
-    "KUALA LUMPUR": "KUL",
-    "BANGKOK": "BKK",
-    "PHUKET": "HKT",
-    "JAKARTA": "CGK",
-    "BALI": "DPS",
-    "SEOUL": "ICN",
-    "MANILA": "MNL",
-    "HO CHI MINH CITY": "SGN",
-    "HANOI": "HAN",
-
-    # Australia
-    "SYDNEY": "SYD",
-    "MELBOURNE": "MEL",
-    "BRISBANE": "BNE",
-    "PERTH": "PER",
-    "AUCKLAND": "AKL",
-
-    # Middle East
-    "DOHA": "DOH",
-    "RIYADH": "RUH",
-    "JEDDAH": "JED",
-    "MUSCAT": "MCT",
-    "KUWAIT CITY": "KWI",
-
-    # Africa
-    "CAIRO": "CAI",
-    "CAPE TOWN": "CPT",
-    "JOHANNESBURG": "JNB",
-    "NAIROBI": "NBO",
-    "LAGOS": "LOS",
-
-    # South America
-    "SAO PAULO": "GRU",
-    "RIO DE JANEIRO": "GIG",
-    "BUENOS AIRES": "EZE",
-    "LIMA": "LIM",
-    "SANTIAGO": "SCL",
+COUNTRY_MAIN_AIRPORTS = {
+    "NP": "KTM", "ID": "CGK", "IN": "DEL", "US": "JFK",
+    "GB": "LHR", "AE": "DXB", "SG": "SIN", "MY": "KUL",
+    "TH": "BKK", "JP": "HND", "AU": "SYD", "CA": "YYZ",
+    "DE": "FRA", "FR": "CDG", "IT": "FCO", "ES": "MAD",
+    "CN": "PEK", "KR": "ICN", "BD": "DAC", "PK": "ISB",
+    "LK": "CMB", "BT": "PBH", "QA": "DOH", "SA": "JED",
+    "TR": "IST", "NZ": "AKL", "PH": "MNL", "VN": "SGN",
+    "NL": "AMS", "CH": "ZRH", "PT": "LIS", "BR": "GRU",
+    "MX": "MEX", "ZA": "JNB",
 }
 
 
-# --------------------------------------------------
-# 1. CLEAN TEXT
-# --------------------------------------------------
-
-def clean_text(text: str) -> str:
-
-    text = text.upper().strip()
-
-    text = re.sub(r"[^A-Z0-9\s]", " ", text)
-
-    text = re.sub(r"\s+", " ", text)
-
-    stop_words = {
-        "FLIGHT", "FLIGHTS", "TRIP", "TRIPS",
-        "TRAVEL", "PLAN", "COMPLETE", "DAYS",
-        "DAY", "HOTEL", "HOTELS", "INFO",
-        "BUDGET", "INFORMATION", "UNDER"
-    }
-
-    words = [
-        word for word in text.split()
-        if word not in stop_words
-    ]
-
-    return " ".join(words).strip()
-
-
-# --------------------------------------------------
-# 2. COUNTRY NAME TO COUNTRY CODE
-# --------------------------------------------------
-
-def country_name_to_code(country_name: str) -> str:
-
-    country_name = country_name.upper().strip()
-
+def country_name_to_code(country_name):
+    country_name = country_name.strip().upper()
     if country_name in COUNTRY_ALIAS:
         return COUNTRY_ALIAS[country_name]
-
     try:
-        country = pycountry.countries.lookup(country_name)
-        return country.alpha_2
-
+        return pycountry.countries.lookup(country_name).alpha_2
     except LookupError:
         return None
 
 
-# --------------------------------------------------
-# 3. CHECK AIRPORT COUNTRY
-# --------------------------------------------------
-
-def airport_country_matches(airport: str, country_code: str) -> bool:
-
-    country_code = country_code.upper().strip()
-
-    if not pycountry.countries.get(alpha_2=country_code):
-        return False
-
-    airport_info = AIRPORTS_DATA.get(airport.upper().strip())
-
-    if not airport_info:
-        return False
-
-    return airport_info.get("country") == country_code
+def airport_country_matches(airport_code, country_code):
+    airport = AIRPORTS_DATA.get(airport_code.upper())
+    return bool(airport and airport.get("country") == country_code)
 
 
-# --------------------------------------------------
-# 4. GET AIRPORT FOR COUNTRY
-# --------------------------------------------------
-
-def get_best_airport_for_country(country_code: str) -> str:
-
-    country_code = country_code.upper().strip()
-
-    if not pycountry.countries.get(alpha_2=country_code):
-        return None
-
-    for city, iata in CITY_MAIN_AIRPORTS.items():
-
-        airport_info = AIRPORTS_DATA.get(iata)
-
-        if airport_info and airport_info["country"] == country_code:
-            return iata
-
+def get_best_airport_for_country(country_code):
+    preferred = COUNTRY_MAIN_AIRPORTS.get(country_code)
+    if preferred and airport_country_matches(preferred, country_code):
+        return preferred
+    for code, airport in AIRPORTS_DATA.items():
+        if airport.get("country") == country_code:
+            return code
     return None
 
 
-# --------------------------------------------------
-# 5. RESOLVE LOCATION TO IATA
-# --------------------------------------------------
-
-def resolve_location_to_iata(location: str) -> str:
-
-    location = clean_text(location).upper()
-
-    # Check city
+def resolve_location_to_iata(location):
+    location = location.strip().upper()
     if location in CITY_MAIN_AIRPORTS:
-        return CITY_MAIN_AIRPORTS[location]
-
-    # Check country
+        code = CITY_MAIN_AIRPORTS[location]
+        if code in AIRPORTS_DATA:
+            return code
     country_code = country_name_to_code(location)
-
-    if country_code:
-        return get_best_airport_for_country(country_code)
-
-    return None
+    return get_best_airport_for_country(country_code) if country_code else None
 
 
-# --------------------------------------------------
-# 6. FIND CITY AND COUNTRY MENTIONS
-# --------------------------------------------------
+def find_location_mentions(query):
+    query = query.upper()
+    known = list(CITY_MAIN_AIRPORTS) + list(COUNTRY_ALIAS)
+    found = []
+    for location in set(known):
+        match = re.search(r"\b" + re.escape(location) + r"\b", query)
+        if match:
+            found.append((match.start(), location))
+    found.sort(key=lambda item: item[0])
+    result = []
+    for _, location in found:
+        if location not in result:
+            result.append(location)
+    return result
 
-def find_location_mentions(query: str) -> list:
 
-    query = clean_text(query)
-
-    known_locations = set(CITY_MAIN_AIRPORTS) | set(COUNTRY_ALIAS)
-
-    location_pattern = "|".join(
-        re.escape(name)
-        for name in sorted(known_locations, key=len, reverse=True)
+def parse_route_from_query(query):
+    query = query.upper()
+    match = re.search(
+        r"\bFROM\s+(.+?)\s+TO\s+(.+?)(?:\s+(?:INCLUDING|WITH|FOR|UNDER|BUDGET|AND)\b|$)",
+        query,
     )
-
-    matches = re.finditer(
-        rf"(?<![A-Z])({location_pattern})(?![A-Z])",
-        query
-    )
-
-    locations = []
-
-    for match in matches:
-
-        location = match.group(1)
-
-        if location not in locations:
-            locations.append(location)
-
-    return locations
-
-
-# --------------------------------------------------
-# 7. PARSE ORIGIN AND DESTINATION
-# --------------------------------------------------
-
-def parse_route_from_query(query: str) -> tuple:
+    if match:
+        origins = find_location_mentions(match.group(1))
+        destinations = find_location_mentions(match.group(2))
+        if origins and destinations:
+            return (
+                resolve_location_to_iata(origins[0]),
+                resolve_location_to_iata(destinations[0]),
+            )
 
     locations = find_location_mentions(query)
-
-    origin_iata = DEFAULT_ORIGIN_IATA
-    destination_iata = None
-
+    if len(locations) >= 2:
+        return (
+            resolve_location_to_iata(locations[0]),
+            resolve_location_to_iata(locations[1]),
+        )
     if len(locations) == 1:
-
-        destination_iata = resolve_location_to_iata(locations[0])
-
-    elif len(locations) >= 2:
-
-        cleaned_query = clean_text(query)
-
-        # Check whether the user specified "from"
-        from_match = re.search(
-            r"\bFROM\s+([A-Z ]+)",
-            cleaned_query
-        )
-
-        if from_match:
-
-            text_after_from = from_match.group(1).strip()
-
-            possible_origins = [
-                location for location in locations
-                if re.search(
-                    rf"\b{re.escape(location)}\b",
-                    text_after_from
-                )
-            ]
-
-            if possible_origins:
-
-                origin_location = possible_origins[0]
-
-                destination_location = next(
-                    (loc for loc in locations if loc != origin_location),
-                    None
-                )
-
-            else:
-
-                origin_location = locations[0]
-                destination_location = locations[1]
-
-        else:
-
-            origin_location = locations[0]
-            destination_location = locations[1]
-
-        origin_iata = (
-            resolve_location_to_iata(origin_location)
-            or DEFAULT_ORIGIN_IATA
-        )
-
-        destination_iata = (
-            resolve_location_to_iata(destination_location)
-            if destination_location else None
-        )
-
-    return origin_iata, destination_iata
+        return DEFAULT_ORIGIN, resolve_location_to_iata(locations[0])
+    return None, None
 
 
-# --------------------------------------------------
-# 8. FORMAT FLIGHT INFORMATION
-# --------------------------------------------------
+def format_flight(flight):
+    airline = flight.get("airline") or {}
+    departure = flight.get("departure") or {}
+    arrival = flight.get("arrival") or {}
+    flight_info = flight.get("flight") or {}
+    aircraft = flight.get("aircraft") or {}
 
-def format_flight(flight: dict) -> str:
+    return f"""
+Airline: {airline.get('name') or 'Unknown airline'}
+Flight Number: {(flight_info.get('iataNumber') or 'Unknown')}
 
-    airline = flight.get("airline", {}).get(
-        "name", "Unknown Airline"
-    )
+Departure:
+Airport: {departure.get('iataCode') or 'Unknown'}
+Time: {departure.get('scheduledTime') or 'Not available'}
+Terminal: {departure.get('terminal') or 'Not available'}
 
-    flight_number = flight.get("flight", {}).get(
-        "number", "Unknown"
-    )
+Arrival:
+Airport: {arrival.get('iataCode') or 'Unknown'}
+Time: {arrival.get('scheduledTime') or 'Not available'}
+Terminal: {arrival.get('terminal') or 'Not available'}
 
-    # Departure information
-    departure = flight.get("departure", {})
-
-    departure_airport = departure.get("airport", "Unknown")
-    departure_terminal = departure.get("terminal", "Unknown")
-    departure_gate = departure.get("gate", "Unknown")
-    departure_time = departure.get("estimated", "Unknown")
-    departure_delay = departure.get("delay", 0)
-
-    # Arrival information
-    arrival = flight.get("arrival", {})
-
-    arrival_airport = arrival.get("airport", "Unknown")
-    arrival_terminal = arrival.get("terminal", "Unknown")
-    arrival_gate = arrival.get("gate", "Unknown")
-    arrival_time = arrival.get("estimated", "Unknown")
-    arrival_delay = arrival.get("delay", 0)
-
-    # Flight status
-    status = flight.get("flight_status", "Unknown")
-
-    return (
-        f"Airline: {airline}\n"
-        f"Flight Number: {flight_number}\n"
-        f"Flight Status: {status}\n\n"
-
-        f"--- DEPARTURE ---\n"
-        f"Airport: {departure_airport}\n"
-        f"Terminal: {departure_terminal}\n"
-        f"Gate: {departure_gate}\n"
-        f"Departure Time: {departure_time}\n"
-        f"Departure Delay: {departure_delay} minutes\n\n"
-
-        f"--- ARRIVAL ---\n"
-        f"Airport: {arrival_airport}\n"
-        f"Terminal: {arrival_terminal}\n"
-        f"Gate: {arrival_gate}\n"
-        f"Arrival Time: {arrival_time}\n"
-        f"Arrival Delay: {arrival_delay} minutes\n"
-    )
+Aircraft: {aircraft.get('modelText') or 'Not available'}
+""".strip()
 
 
-# --------------------------------------------------
-# 9. SEARCH FLIGHTS USING API
-# --------------------------------------------------
+def search_flights(query="", travel_date="", limit=10, origin=None, destination=None):
+    """
+    Search future flight schedule information.
 
-def search_flights(query: str, limit: int = 10) -> list:
-
-    origin_iata, destination_iata = parse_route_from_query(query)
-
-    print(f"Detected route: {origin_iata} -> {destination_iata}")
-
-    if not destination_iata:
-
-        print("Could not identify a supported destination city or country.")
-
+    origin and destination can be supplied directly as city/country names
+    or IATA codes. If omitted, route parsing uses query and defaults to KTM
+    only when one destination is detected.
+    """
+    if not API_KEY:
+        print("AVIATIONSTACK_API_KEY is missing from .env")
         return []
 
-    if not API_KEY:
+    if not origin or not destination:
+        parsed_origin, parsed_destination = parse_route_from_query(query)
+        origin = origin or parsed_origin
+        destination = destination or parsed_destination
 
-        print("AVIATIONSTACK_API_KEY is missing. Check your .env file.")
+    origin = str(origin or "").strip().upper()
+    destination = str(destination or "").strip().upper()
 
+    if len(origin) != 3 or len(destination) != 3:
+        print("Could not identify valid origin and destination airport codes.")
+        return []
+    if origin == destination:
+        print("Origin and destination cannot be the same.")
+        return []
+
+    travel_date = str(travel_date or "").strip().strip("'\"")
+    try:
+        selected_date = date.fromisoformat(travel_date)
+    except ValueError:
+        print("Please provide a valid future date in YYYY-MM-DD format.")
+        return []
+
+    if selected_date <= date.today():
+        print("Please enter a future departure date.")
         return []
 
     params = {
         "access_key": API_KEY,
-        "dep_iata": origin_iata,
-        "arr_iata": destination_iata,
-        "limit": limit
+        "iataCode": destination,
+        "type": "arrival",
+        "date": travel_date,
     }
 
     try:
-
         response = requests.get(
             BASE_URL,
             params=params,
             timeout=30,
-            verify=certifi.where()
+            verify=certifi.where(),
         )
+        response.raise_for_status()
+        result = response.json()
 
-        print("HTTP status:", response.status_code)
-
-        data = response.json()
-
-        if response.status_code != 200 or "error" in data:
-
-            print(
-                "Aviationstack API error:",
-                data.get("error", response.text)
-            )
-
+        if not isinstance(result, dict) or result.get("error"):
+            print("AviationStack returned an invalid response:", result)
             return []
 
-        return data.get("data", [])
-
-    except requests.RequestException as error:
-
-        print("Network/request error:", error)
-
-        return []
-
-    except ValueError:
-
-        print("The API response was not valid JSON.")
-
-        return []
-
-
-# --------------------------------------------------
-# 10. TEST THE CODE
-# --------------------------------------------------
-
-if __name__ == "__main__":
-
-    test_query = "plan a 7 days Japan trip from India"
-
-    print("Locations found:", find_location_mentions(test_query))
-
-    print("Parsed route:", parse_route_from_query(test_query))
-
-    print("\nSearching flights...")
-
-    flights = search_flights(test_query)
-
-    if flights:
+        flights = result.get("data") or []
+        matches = []
+        seen = set()
 
         for flight in flights:
+            departure = flight.get("departure") or {}
+            arrival = flight.get("arrival") or {}
+            info = flight.get("flight") or {}
 
-            print(format_flight(flight))
+            dep_code = (departure.get("iataCode") or "").upper()
+            arr_code = (arrival.get("iataCode") or "").upper()
 
-            print("=" * 50)
+            if dep_code != origin or arr_code != destination:
+                continue
 
-    else:
+            key = (
+                dep_code,
+                arr_code,
+                departure.get("scheduledTime"),
+                arrival.get("scheduledTime"),
+                info.get("iataNumber"),
+            )
+            if key not in seen:
+                seen.add(key)
+                matches.append(flight)
 
-        print("No flight records returned. Check the messages above.")
+        return matches[:max(1, int(limit))]
+
+    except requests.exceptions.Timeout:
+        print("Flight API request timed out.")
+    except requests.exceptions.HTTPError as error:
+        print("Flight API HTTP error:", error)
+        print("API response:", response.text[:1000])
+    except requests.exceptions.RequestException as error:
+        print("Flight API request error:", error)
+    except (ValueError, TypeError) as error:
+        print("Invalid flight API response:", error)
+    except Exception as error:
+        print("Unexpected flight search error:", repr(error))
+
+    return []
+
+
+if __name__ == "__main__":
+    query = input("Enter travel request (e.g. from Kathmandu to Dhaka): ")
+    travel_date = input("Enter departure date (YYYY-MM-DD): ")
+    origin, destination = parse_route_from_query(query)
+    print("Parsed route:", origin, "->", destination)
+    flights = search_flights(query, travel_date, origin=origin, destination=destination)
+    for item in flights:
+        print(format_flight(item))
+    if not flights:
+        print("No flight schedule information available.")
