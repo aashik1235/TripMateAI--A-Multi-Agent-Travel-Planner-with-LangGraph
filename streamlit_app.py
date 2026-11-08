@@ -17,7 +17,7 @@ import streamlit as st
 # 1. SETTINGS
 # ============================================================
 
-API_URL = "http://127.0.0.1:8000"
+API_URL = "https://tripmateai-a-multi-agent-travel-planner-915h.onrender.com"
 
 DESTINATIONS = {
     "🇯🇵 Japan": "Japan",
